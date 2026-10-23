@@ -1,0 +1,47 @@
+# Checkpoint volume and a one-off Job that downloads the pinned checkpoint and
+# verifies every file against weights-manifest.json. Adjust the namespace and
+# storage class. The Job needs HTTPS egress to the model hub; remove the
+# NetworkPolicy if your namespace has no default-deny policy.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spikingbrain-weights
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 30Gi}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: spikingbrain-fetch-egress
+spec:
+  podSelector: {matchLabels: {app: spikingbrain-fetch}}
+  policyTypes: [Egress]
+  egress:
+  - ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}, {port: 5353, protocol: UDP}, {port: 5353, protocol: TCP}]
+  - ports: [{port: 443, protocol: TCP}]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spikingbrain-fetch
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels: {app: spikingbrain-fetch}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+      - name: fetch
+        image: REPLACE_WITH_IMAGE_DIGEST
+        command: ["python3", "-m", "spikingbrain_cpu.fetch", "/opt/spikingbrain/weights-manifest.json", "/models/spikingbrain"]
+        resources: {requests: {cpu: 200m, memory: 256Mi}, limits: {cpu: "1", memory: 512Mi}}
+        securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+        volumeMounts:
+        - {name: weights, mountPath: /models}
+      volumes:
+      - {name: weights, persistentVolumeClaim: {claimName: spikingbrain-weights}}

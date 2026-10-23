@@ -1,0 +1,61 @@
+# CPU inference server. Requests/limits below follow the measured float16
+# profile (peak RSS about 13 GiB); see docs/PERFORMANCE.md before changing them.
+# For SB_WEIGHT_FORMAT=int8 use requests.memory 8Gi and limits.memory 10Gi.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spikingbrain-llm
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: spikingbrain-llm}
+  template:
+    metadata:
+      labels: {app: spikingbrain-llm}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+      - name: server
+        image: REPLACE_WITH_IMAGE_DIGEST
+        ports: [{containerPort: 8080, name: http}]
+        env:
+        - {name: SB_WEIGHT_FORMAT, value: float16}
+        - {name: SB_THREADS, value: "4"}
+        - {name: OMP_NUM_THREADS, value: "4"}
+        - {name: SB_MAX_CONTEXT, value: "24576"}
+        resources:
+          requests: {cpu: "4", memory: 14Gi}
+          limits: {cpu: "4", memory: 16Gi}
+        securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+        startupProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 10, failureThreshold: 180, timeoutSeconds: 5}
+        readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 20, failureThreshold: 6, timeoutSeconds: 5}
+        livenessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 30, failureThreshold: 10, timeoutSeconds: 10}
+        volumeMounts:
+        - {name: weights, mountPath: /models, readOnly: true}
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - {name: weights, persistentVolumeClaim: {claimName: spikingbrain-weights, readOnly: true}}
+      - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spikingbrain-llm
+spec:
+  selector: {app: spikingbrain-llm}
+  ports: [{name: http, port: 8080, targetPort: 8080}]
+---
+# Only the agent pods may reach the model. No Route/Ingress is created.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: spikingbrain-llm-ingress
+spec:
+  podSelector: {matchLabels: {app: spikingbrain-llm}}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector: {matchLabels: {app: llm-client}}
+    ports: [{port: 8080, protocol: TCP}]

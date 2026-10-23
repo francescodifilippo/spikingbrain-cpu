@@ -1,0 +1,8 @@
+.git
+.github
+docs
+kubernetes
+tests
+tools
+models
+**/__pycache__

@@ -1,0 +1,9 @@
+spikingbrain-cpu is an independent CPU re-implementation of the inference path of SpikingBrain2.0 text models. It is not affiliated with the upstream authors.
+
+The model structure, layer semantics and parameter names follow:
+
+* SpikingBrain2.0, Copyright (c) 2026 Brain-inspired computing lab https://github.com/BICLab/SpikingBrain2.0 (MIT License)
+* flash-linear-attention, Copyright (c) 2023-2025 Songlin Yang https://github.com/fla-org/flash-linear-attention (MIT License) (gated delta rule, sparse state expansion layers, cache semantics)
+* MoBA, Copyright (c) 2025 Moonshot AI https://github.com/MoonshotAI/MoBA (MIT License)
+
+No upstream source file is copied verbatim; the operators were rewritten in plain PyTorch. Model weights are not distributed with this repository. The weights are published by their authors on ModelScope; at the time of writing the GitHub repository states the MIT License while the ModelScope model card states Apache License 2.0. Check the current terms before use.
