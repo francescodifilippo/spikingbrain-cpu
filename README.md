@@ -2,9 +2,9 @@
 
 A reference CPU implementation and verification harness for [BICLab/SpikingBrain2.0](https://github.com/BICLab/SpikingBrain2.0): exact, tested and readable. It is not a fast runtime.
 
-The upstream text model depends on CUDA-only and Triton-only kernels, so it cannot run without a GPU. This repository re-implements its inference path in plain PyTorch, loads the released checkpoint unchanged, and shows that the result is the same function:
+The upstream text model depends on CUDA-only and Triton-only kernels, so it cannot run without a GPU. This repository re-implements its inference path in plain PyTorch, loads the released checkpoint unchanged, and checks it against the original code:
 
-* All 36 layers match the original upstream code within 3e-7 relative error, and the final logits match on every position (top-1 100 %, KL 0). The harness that runs the upstream code itself on CPU (Triton interpreter mode) is included, see [docs/VALIDATION.md](docs/VALIDATION.md).
+* On the reference input, the largest recorded relative L2 error of any block output against the original upstream code is 4e-7 (1e-6 accumulated through all 36 layers), and the final predictions agree on every position (top-1 100 %, KL below 1e-5). The harness that runs the upstream code on CPU (Triton interpreter mode, with three documented substitutions) is included, see [docs/VALIDATION.md](docs/VALIDATION.md).
 * The hybrid gated delta net, sparse state expansion (SSE) and sliding-window attention are written as ordinary PyTorch code with unit tests. You can read, step through and test the architecture on any machine.
 * A small OpenAI-compatible server, measured weight formats and Kubernetes manifests let you run the model on CPU-only hosts, slowly ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
 
@@ -18,7 +18,7 @@ Running the released code and weights side by side with this port showed:
 
 * **The spiking computation is not in the released code.** The INT8-Spiking, event-driven activation coding described in the paper has no implementation at commit `0256113` (see also upstream issue #6, a request for that inference code). Upstream and this port both compute every activation.
 * **MoBA only matters above 49,152 tokens** with the instruct checkpoint's settings (4096-token chunks, top-12). Below that length its chunk selection picks every past chunk, so it is exactly causal attention. The upstream Hugging Face code also decodes with dense attention.
-* **Weak tool calling comes from the weights.** Upstream itself gives the `<tool_call>` token a probability below 2 % at the start of an answer.
+* **Weak tool calling is not a porting artefact.** Upstream itself gives the `<tool_call>` token a probability below 1 % at the start of an answer on the harness prompt, and the port matches it there. A full malformed call was not reproduced with upstream.
 * **Upstream decode shifts rotary positions by one** when used with Transformers newer than 4.53.3 (the README recommends 4.57.1): the bundled flash-linear-attention cache increments its token counter at layer 0, so layers 1-35 read a position one step ahead. The fix already exists in fla-org/flash-linear-attention (PR #748). Measured effect: [docs/VALIDATION.md](docs/VALIDATION.md#scope-of-this-result).
 
 ## What is ported
@@ -33,7 +33,7 @@ Features of the released upstream code (commit `0256113`) and their state in thi
 | Chunked gated delta rule kernels (Triton) | Yes, same chunked (WY) algorithm rewritten in PyTorch |
 | MoBA sparse attention (12 chunks of 4096 tokens per query) | Same output, but no MoBA speed-up. Below 49,152 tokens MoBA selects every past chunk, so it equals dense causal attention, which the port computes. Longer contexts, where MoBA would save work, are rejected. See [PORTING_NOTES](docs/PORTING_NOTES.md#moba-equals-causal-attention-below-a-limit). |
 | Spiking / event-driven activation coding (INT8-Spiking) | Not available: it is described in the upstream paper and README, but the released code contains no implementation of it. The upstream GPU code also computes every activation. |
-| FP8 KV cache (vLLM plugin) | No. fp32 caches |
+| Optional FP8 KV cache (vLLM `cache_dtype` setting) | No. fp32 caches |
 | Vision-language model, vLLM plugin, training | No |
 
 ## What you get
@@ -43,7 +43,7 @@ Features of the released upstream code (commit `0256113`) and their state in thi
 * Exact prefix reuse: a request that extends the previous conversation only computes the new tokens.
 * `weights-manifest.json`: the pinned checkpoint (ModelScope `Panyuqi/SpikingBrain-2.0-instruct`, revision `866364cb`) with SHA-256 for every file, plus a downloader that verifies them.
 * A Containerfile and Kubernetes manifests (non-root, read-only root filesystem, no external route).
-* `tools/upstream-reference/`: the harness that runs the original upstream code on CPU (Triton interpreter mode) and compares it with this port.
+* `tools/upstream-reference/`: the harness that runs the original upstream code on CPU (Triton interpreter mode, with the substitutions listed in [docs/VALIDATION.md](docs/VALIDATION.md)) and compares it with this port.
 
 ## Expected performance
 

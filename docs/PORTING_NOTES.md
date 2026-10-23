@@ -61,6 +61,6 @@ The recurrent state has a fixed size, so the server can continue a conversation 
 
 ## Not ported
 
-Training paths (window-attention dropout, auxiliary routing loss), batched requests, the vision-language model, the vLLM plugin with its FP8 KV cache, and contexts above 49152 tokens.
+Training paths (window-attention dropout, auxiliary routing loss), batched requests, the vision-language model, the vLLM plugin (including its optional FP8 KV cache), and contexts above 49152 tokens.
 
 The spiking (INT8-Spiking, event-driven) activation coding described in the upstream paper is not part of the released code at commit `0256113`: no file in `spb2/`, `spb2_vllm/`, `flash-linear-attention_dev/` or `MoBA/` implements it. Upstream and this port are both ordinary hybrid dense-plus-linear-attention models at inference time, and the neuromorphic efficiency claims do not apply to either.
